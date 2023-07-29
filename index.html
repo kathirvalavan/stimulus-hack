@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+<head>
+    Stimulus hack!
+
+    <script type="application/javascript">
+
+      class BaseController {
+
+         connect(ele) {
+         }
+
+         disconnect() {
+           console.log('disconnected')
+         }
+       }
+
+
+       class ProductController extends BaseController {
+
+         connect(ele) {
+           console.log(' product connected')
+         }
+
+         disconnect() {
+           console.log(' product disconnected')
+         }
+
+         cc() {
+           var ele = document.querySelectorAll('[data-controller="comment"]')[0]
+           var child = document.createElement('div');
+           child.setAttribute('data-controller', "notes")
+           child.setAttribute('idd', "idd")
+           child.innerHTML = "hello world notes";
+           ele.appendChild(child);
+         }
+       }
+
+       class CommentController extends BaseController{
+
+         connect(element) {
+           console.log('comments connected', element);
+         }
+
+         disconnect() {
+           console.log('comments disconnected')
+         }
+       }
+
+       class NotesController extends BaseController{
+
+         connect(element) {
+           console.log('notes connected', element);
+           var _self = this;
+           //setInterval(function () { _self.cc() }, 1000);
+           element.addEventListener('click', (eve) => {
+             console.log('notes click triggered', )
+           })
+         }
+
+         cc() {
+           var ele = document.querySelectorAll('[data-controller="notes"]')[0]
+           var child = document.createElement('div');
+           child.setAttribute('data-controller', "task")
+           child.setAttribute('idd', "idd")
+           child.innerHTML = "hello world tasks";
+           ele.appendChild(child);
+         }
+
+         disconnect() {
+           console.log('notes disconnected')
+         }
+       }
+
+       class TaskController extends BaseController{
+
+        greet() {
+          console.log('say hello greet');
+        }
+
+         connect(element) {
+           console.log('task connected', element);
+           var _self = this;
+           element.addEventListener('click', (eve) => {
+             console.log('click triggered');
+
+             let target = eve.target;
+             if (target.dataset && target.dataset.action_click) {
+               let value = target.dataset.action_click;
+               if ( typeof _self[value] == "function") {
+                 _self[value](...arguments)
+                 eve.stopPropagation();
+               }
+             }
+
+
+           })
+         }
+
+         disconnect() {
+           console.log('task disconnected')
+         }
+       }
+
+       class ElementObserver {
+
+         constructor(element, application) {
+           this.element = element;
+           this.application = application;
+           this.connectController();
+         }
+
+         static connect(element, application) {
+
+           if (element.dataset &&  element.dataset.controller) {
+             let con = application.elementControllerStore.get(element);
+             if(con) {
+               return null;
+             }
+           }
+
+           const elemObserver = new this(element, application);
+           elemObserver.setup();
+           application.elementObserverStore.set(element, elemObserver);
+           return elemObserver;
+         }
+
+         static disconnect(element, application) {
+
+           if (element.dataset &&  element.dataset.controller) {
+             let con = application.elementControllerStore.get(element);
+             if(con) {
+               con.disconnect();
+               application.elementControllerStore.get(element).mutationObserver?.disconnect();
+               delete application.elementObserverStore.delete(element);
+               delete application.elementControllerStore.delete(element);
+             }
+           }
+
+           for (const cnode of Array.from(element.childNodes)) {
+             ElementObserver.disconnect(cnode, application);
+           }
+
+         }
+
+         setup() {
+           this.mutationObserver = new MutationObserver((data) => {
+             this.processMutation(data);
+           });
+           this.mutationObserver.observe(this.element, { attributes: true, subtree: true, childList: true });
+         }
+
+         processMutation(records) {
+           for (const mut of Array.from(records)) {
+             if (mut.type === "childList") {
+               this.processChildMutation(mut);
+             }
+           }
+         }
+
+         processChildMutation(child) {
+
+           for (const mut of Array.from(child.removedNodes)) {
+             ElementObserver.disconnect(mut, this.application);
+           }
+
+           for (const mut of Array.from(child.addedNodes)) {
+             if (mut.dataset && mut.dataset.controller) {
+               let controller = this.application.matchController(mut.dataset.controller);
+               if(controller) {
+                 ElementObserver.connect(mut, this.application);
+               }
+             }
+           }
+         }
+
+
+         connectController() {
+           let node = this.element;
+           if (node.dataset && node.dataset.controller) {
+             let controller = this.application.matchController(node.dataset.controller)
+             if(controller) {
+               this.controller = controller;
+               const controllerInstance = new controller(node);
+               this.application.controllerBindings.push(controllerInstance);
+               this.application.elementControllerStore.set(node, controllerInstance);
+               controllerInstance.connect(node);
+             }
+           }
+         }
+
+       }
+
+       class Application {
+
+         mutationObserver;
+         controllerBindings;
+         rootElement;
+
+         constructor() {
+           this.mutationObserver = null;
+           this.controllerBindings = [];
+           this.elementControllerStore = new WeakMap();
+           this.elementObserverStore = new WeakMap();
+           this.rootElement = document.documentElement;
+           console.log('invoked')
+         }
+
+         static start() {
+           const application = new this();
+           application.start();
+           return application;
+         }
+
+         start() {
+           this.rootElement = ElementObserver.connect(document.documentElement, this)
+         }
+
+         controllers() {
+           return [ProductController, CommentController, NotesController, TaskController]
+         }
+
+         matchController(name) {
+           for ( const controller of this.controllers() ) {
+             if (controller.name.toLowerCase() === name + "controller") {
+               return controller;
+             }
+           }
+         }
+
+       }
+
+       console.log('application', Application.start());
+
+
+
+    </script>
+</head>
+
+<body>
+<div data-controller="product">
+    <div data-controller="comment">
+      comment
+        <div data-controller="notes">
+            notes
+            <div>
+                deep
+                <div data-controller="task"> Task controller
+                    <button data-action_click="greet">Click here</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+  <h1>Booting</h1>
+</div>
+</body>
+</html>
